@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Cairo } from "next/font/google";
 import type { ReactNode } from "react";
 import Link from "next/link";
+import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
 
 const cairo = Cairo({ subsets: ["arabic", "latin"], variable: "--font-cairo" });
@@ -57,6 +58,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             <span className="text-slate-300">&quot;The New SDLC with Vibe Coding&quot;</span> (Osmani, Saboo, Kartakis — Google, 2026)
           </p>
         </footer>
+        <Analytics />
       </body>
     </html>
   );

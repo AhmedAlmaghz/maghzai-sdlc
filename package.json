@@ -30,6 +30,7 @@
   "dependencies": {
     "@ai-sdk/google": "^4.0.16",
     "@ai-sdk/openai": "^4.0.14",
+    "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.28",
     "ai-sdk-provider-opencode-sdk": "^3.0.6",
     "better-sqlite3": "^12.11.1",
