@@ -90,11 +90,97 @@ DATABASE_PROVIDER=postgres
 DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/app_db
 ```
 
-Create or update PostgreSQL tables before deployment:
+### Applying database migrations (IMPORTANT for Vercel / Postgres)
+
+This project uses Drizzle ORM with committed migration files in the `drizzle/`
+directory. Generated migration SQL is applied with `drizzle-kit migrate`, or the
+schema can be synced directly with `drizzle-kit push`.
+
+The app itself **never creates tables at runtime** — Vercel functions are
+stateless, so table creation must happen outside the runtime, before/independent
+of deployment.
+
+#### Step 1 — Configure environment variables
+
+Locally, create `.env.local` with the Postgres connection string. On Vercel, add
+the same variables under **Project → Settings → Environment Variables** (Vercel
+Postgres users: the values are under **Storage → Postgres → Connect → .env.local**):
+
+```env
+DATABASE_PROVIDER=postgres
+DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
+```
+
+`POSTGRES_URL` is also supported by `drizzle.config.ts` as a fallback for
+`DATABASE_URL`.
+
+#### Step 2 — Generate migration files (only when the schema changes)
 
 ```powershell
-npx drizzle-kit push
+npm run db:generate
 ```
+
+This writes new SQL files under `drizzle/` (e.g. `drizzle/0000_xxx.sql`) and the
+meta snapshots under `drizzle/meta/`. **Commit these files** — they are not
+gitignored.
+
+#### Step 3 — Apply migrations to a database
+
+Use `drizzle-kit migrate` (applies committed migrations in order) or
+`drizzle-kit push` (syncs schema directly; useful for prototyping):
+
+```powershell
+# Apply committed migrations (recommended for production)
+npm run db:migrate
+
+# OR push the schema directly (no migration history)
+npm run db:push
+```
+
+Both commands read the connection string from `DATABASE_URL`/`POSTGRES_URL` in
+your `.env.local` (or from the current shell environment).
+
+#### Step 4 — Deploying to Vercel with migrations
+
+Vercel build containers are ephemeral and `drizzle-kit migrate` must not be
+expected to run automatically on every deployment without care. Recommended
+approaches:
+
+1. **Run migrations from your local machine** (or CI) against the production
+   Postgres before/after deploying — no runtime code changes needed:
+
+   ```powershell
+   # Windows (PowerShell) — point DATABASE_URL at the Vercel Postgres string
+   $env:DATABASE_PROVIDER="postgres"
+   $env:DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DBNAME>?sslmode=require"
+   npm run db:migrate
+   ```
+
+   ```bash
+   # macOS/Linux/CI — with the Vercel Postgres connection string exported
+   DATABASE_PROVIDER=postgres DATABASE_URL="postgresql://..." npm run db:migrate
+   ```
+
+2. **Alternatively, run migrations as a one-time step in the Vercel CLI**:
+
+   ```powershell
+   vercel env pull .env.local && npm run db:migrate
+   ```
+
+3. **Or trigger migrations from a CI/CD job** (e.g. GitHub Actions) after the
+   Vercel deploy, using the same `db:migrate` command with `DATABASE_URL` from
+   Vercel Secrets.
+
+After the tables exist, redeploy the app (or simply hit it again) — the
+`42P01: relation "projects" does not exist` error will be gone.
+
+#### Vercel Postgres quick reference
+
+- Find the connection string: **Vercel Dashboard → Storage → Postgres → Connect
+  → .env.local** (it exposes `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`, etc.).
+- The app reads `DATABASE_URL` at runtime (see `src/db/index.ts`); set it in
+  Vercel environment variables or re-export the Postgres string to that name.
+- Never commit real connection strings — `.env*.local` and `.env` are gitignored.
 
 ## 4. Local PostgreSQL option
 
