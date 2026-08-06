@@ -23,7 +23,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-sm">
                 ⚙️
               </span>
-              Vibe Kit Factory
+              Vibe Kit Factory - SDLC
             </Link>
             <nav className="flex items-center gap-1 text-sm">
               <Link href="/" className="rounded-lg px-3 py-2 text-slate-300 transition hover:bg-white/5 hover:text-white">
@@ -56,6 +56,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             Vibe Kit Factory — مبني وفق إطار عمل ورقة{" "}
             <span className="text-slate-300">&quot;The New SDLC with Vibe Coding&quot;</span> (Osmani, Saboo, Kartakis — Google, 2026)
           </p>
+          <p> Powered by <a href="https://github.com/AhmedAlmaghz/sdlc-ai" target="blank" >eng. Ahmed Almaghz</a> </p>
         </footer>
       </body>
     </html>
