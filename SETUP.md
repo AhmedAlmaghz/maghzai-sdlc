@@ -142,37 +142,82 @@ your `.env.local` (or from the current shell environment).
 
 #### Step 4 — Deploying to Vercel with migrations
 
-Vercel build containers are ephemeral and `drizzle-kit migrate` must not be
-expected to run automatically on every deployment without care. Recommended
-approaches:
+##### Automatic (recommended): migrations run on every deploy
 
-1. **Run migrations from your local machine** (or CI) against the production
-   Postgres before/after deploying — no runtime code changes needed:
+The project now applies pending Drizzle migrations automatically on **every**
+Vercel deployment, right before `next build`. No manual `npm run db:migrate`
+step is required anymore.
 
-   ```powershell
-   # Windows (PowerShell) — point DATABASE_URL at the Vercel Postgres string
-   $env:DATABASE_PROVIDER="postgres"
-   $env:DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DBNAME>?sslmode=require"
-   npm run db:migrate
-   ```
+How it works:
 
-   ```bash
-   # macOS/Linux/CI — with the Vercel Postgres connection string exported
-   DATABASE_PROVIDER=postgres DATABASE_URL="postgresql://..." npm run db:migrate
-   ```
+1. Vercel detects the `vercel-build` script in `package.json` and runs
+   `node ./scripts/run-migrations.mjs && next build` instead of the plain
+   `build` script.
+2. `scripts/run-migrations.mjs` only proceeds when **both** of these hold:
+   - a Postgres connection string is present (`DATABASE_URL` or
+     `POSTGRES_URL`), and
+   - it is a production/Vercel build context (`NODE_ENV=production` or
+     `VERCEL_ENV` — both set automatically by Vercel).
+3. If the conditions are met, it runs `npm run db:migrate` (`drizzle-kit
+   migrate`), which applies any pending committed migrations under `drizzle/`
+   and records them in the `__drizzle_migrations` table. The step is
+   idempotent — already-applied migrations are skipped on later deploys.
+4. If the conditions are not met (e.g. a plain local `npm run build`), it
+   prints `skipping` and exits 0, so local builds never require a Postgres
+   connection.
+5. If a migration fails, the script exits 1 and the **deploy fails loudly** —
+   better than shipping an app that immediately errors with
+   `42P01: relation "projects" does not exist`.
 
-2. **Alternatively, run migrations as a one-time step in the Vercel CLI**:
+Environment variables to set in Vercel (**Project → Settings → Environment
+Variables**):
 
-   ```powershell
-   vercel env pull .env.local && npm run db:migrate
-   ```
+```env
+DATABASE_URL=postgresql://user:password@host:5432/dbname?sslmode=require
+```
 
-3. **Or trigger migrations from a CI/CD job** (e.g. GitHub Actions) after the
-   Vercel deploy, using the same `db:migrate` command with `DATABASE_URL` from
-   Vercel Secrets.
+`POSTGRES_URL` is also accepted by the migration step as a fallback for
+`DATABASE_URL` (Vercel Postgres exposes it under **Storage → Postgres → Connect
+→ .env.local**).
 
-After the tables exist, redeploy the app (or simply hit it again) — the
-`42P01: relation "projects" does not exist` error will be gone.
+Notes:
+
+- `NODE_ENV=production` is set by Vercel automatically — you don't need to add
+  it.
+- The app runtime (`src/db/index.ts`) only reads `DATABASE_URL`. For the
+  deployed app to work, `DATABASE_URL` must be set to the Vercel Postgres
+  connection string (e.g. the same value as `POSTGRES_URL`).
+- If the migration step reports success but the tables still don't appear, the
+  connection string used during the build may point to a **different database
+  or project** than the one the runtime connects to — verify the database
+  name/host in `DATABASE_URL` / `POSTGRES_URL`.
+
+##### Manual fallback
+
+If you prefer to run migrations yourself (local testing, CI, or one-off
+repairs), use `npm run db:migrate` against the production Postgres connection
+string:
+
+```powershell
+# Windows (PowerShell) — point DATABASE_URL at the Vercel Postgres string
+$env:DATABASE_PROVIDER="postgres"
+$env:DATABASE_URL="postgresql://<USER>:<PASSWORD>@<HOST>:5432/<DBNAME>?sslmode=require"
+npm run db:migrate
+```
+
+```bash
+# macOS/Linux/CI — with the Vercel Postgres connection string exported
+DATABASE_PROVIDER=postgres DATABASE_URL="postgresql://..." npm run db:migrate
+```
+
+Or from the Vercel CLI:
+
+```powershell
+vercel env pull .env.local && npm run db:migrate
+```
+
+Or trigger migrations from a CI/CD job (e.g. GitHub Actions) using the same
+`db:migrate` command with `DATABASE_URL` from Vercel Secrets.
 
 #### Vercel Postgres quick reference
 
@@ -217,6 +262,10 @@ Two causes are by far the most likely, in order:
    (`src/db/index.ts` only auto-creates SQLite tables). Fix: run the migration
    commands from "Applying database migrations" (section 3, step 3/4) against
    the Vercel Postgres connection string, then redeploy / hit the page again.
+   Newer deploys apply migrations automatically via the `vercel-build` script
+   (section 3, step 4): if a fresh deploy still errors, check that
+   `DATABASE_URL` / `POSTGRES_URL` are set in **Project → Settings →
+   Environment Variables**.
 
 2. **`DATABASE_URL` is not set in the Vercel project's environment variables.**
    The runtime only reads `DATABASE_URL` (see `src/db/index.ts`); Vercel
