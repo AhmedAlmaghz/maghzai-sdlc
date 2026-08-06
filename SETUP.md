@@ -200,6 +200,52 @@ Then switch `.env.local` to `DATABASE_PROVIDER=postgres` and add `DATABASE_URL`.
 
 ## Troubleshooting
 
+### Production SSR error is masked ("An error occurred in the Server Components render...")
+
+In production builds Next.js hides the real error message and only keeps a
+`digest` value. The actual error is still written to the Vercel logs server-side.
+Every page that renders from the database (`/`, `/projects`, `/templates`,
+`/settings`, `/builder`) calls the DB directly from a Server Component with no
+try/catch, so any DB failure surfaces as this generic error.
+
+Two causes are by far the most likely, in order:
+
+1. **Migrations were never applied to the Vercel Postgres database.** The tables
+   (`projects`, `settings`, `templates`) do not exist yet, so the first query
+   fails with `42P01: relation "projects" does not exist`. This is a runtime
+   data issue — the app **never** creates Postgres tables automatically
+   (`src/db/index.ts` only auto-creates SQLite tables). Fix: run the migration
+   commands from "Applying database migrations" (section 3, step 3/4) against
+   the Vercel Postgres connection string, then redeploy / hit the page again.
+
+2. **`DATABASE_URL` is not set in the Vercel project's environment variables.**
+   The runtime only reads `DATABASE_URL` (see `src/db/index.ts`); Vercel
+   Postgres auto-exposes `POSTGRES_URL` (and `POSTGRES_URL_NON_POOLING`) under
+   **Storage → Postgres → Connect → .env.local**, but those are **not** read by
+   the app. Set `DATABASE_URL` to the `POSTGRES_URL` value in
+   **Project → Settings → Environment Variables** (e.g.
+   `postgresql://user:password@host:5432/dbname?sslmode=require`).
+
+**How to confirm which one it is:**
+
+- Open **Vercel Dashboard → Project → Logs (Runtime Logs)** and look for the
+  Server Component error. It will contain either
+  `42P01: relation "projects" does not exist` (cause 1) or
+  `DATABASE_URL is required when DATABASE_PROVIDER=postgres` (cause 2), with a
+  matching `digest`.
+- Or call the health endpoint: **`https://<your-app>.vercel.app/api/health`**.
+  It only runs `SELECT 1`, so:
+  - `{"ok":false}` → the app cannot reach Postgres at all →
+    `DATABASE_URL`/connection problem (cause 2).
+  - `{"ok":true}` but pages still error → the DB connection works but the
+    tables are missing → migrations not applied (cause 1).
+
+Also, a root `src/app/error.tsx` boundary now logs `error.digest`, `message`,
+and `cause` to the server console and shows the digest in the UI so you can
+cross-reference the masked production error with the real message in Vercel logs.
+
+### Other common issues
+
 - `DATABASE_URL is required`: this only applies when `DATABASE_PROVIDER=postgres` or `NODE_ENV=production`.
 - SQLite file is not created: confirm the app can write to the project directory and `SQLITE_DATABASE_PATH` points to a writable path.
 - `ECONNREFUSED 127.0.0.1:5432`: PostgreSQL is not running or is listening on a different port.

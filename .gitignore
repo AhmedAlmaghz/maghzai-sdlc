@@ -9,10 +9,10 @@ out/
 build/
 
 # local data
-data/
-*.db
-*.db-shm
-*.db-wal
+# data/
+# *.db
+# *.db-shm
+# *.db-wal
 
 # local env files
 .env*.local
